@@ -1,0 +1,8 @@
+{
+  "ResponseId": "S005",
+  "Feedback": "Synthetic follow-up complaint for routing review.",
+  "Rating": "3",
+  "Route": "CriticalFeedbackReview",
+  "Mode": "PREVIEW_ONLY; no email sent",
+  "Rule": "Case-insensitive substring; human review required"
+}

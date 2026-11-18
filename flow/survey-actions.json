@@ -1,0 +1,206 @@
+{
+  "Existing_intake": {
+    "type": "OpenApiConnection",
+    "runAfter": {},
+    "inputs": {
+      "parameters": {
+        "source": "__EXCEL_SOURCE__",
+        "drive": "__EXCEL_DRIVE__",
+        "file": "surveys.xlsx",
+        "table": "SurveyResponses",
+        "dateTimeFormat": "ISO 8601"
+      },
+      "host": {
+        "apiId": "/providers/Microsoft.PowerApps/apis/shared_excelonlinebusiness",
+        "connectionName": "shared_excelonlinebusiness",
+        "operationId": "GetItems"
+      },
+      "authentication": {
+        "type": "Raw",
+        "value": "@json(decodeBase64(triggerOutputs().headers['X-MS-APIM-Tokens']))['$ConnectionKey']"
+      }
+    }
+  },
+  "Input_id_matches": {
+    "type": "Query",
+    "inputs": {
+      "from": "@body('Existing_intake')?['value']",
+      "where": "@equals(item()?['ResponseId'],triggerBody()?['newId'])"
+    },
+    "runAfter": {
+      "Existing_intake": [
+        "Succeeded"
+      ]
+    }
+  },
+  "Save_new_intake": {
+    "type": "If",
+    "expression": {
+      "and": [
+        {
+          "not": {
+            "equals": [
+              "@trim(coalesce(triggerBody()?['newId'],''))",
+              ""
+            ]
+          }
+        },
+        {
+          "equals": [
+            "@length(body('Input_id_matches'))",
+            0
+          ]
+        }
+      ]
+    },
+    "actions": {
+      "Append_intake": {
+        "type": "OpenApiConnection",
+        "runAfter": {},
+        "inputs": {
+          "parameters": {
+            "source": "__EXCEL_SOURCE__",
+            "drive": "__EXCEL_DRIVE__",
+            "file": "surveys.xlsx",
+            "table": "SurveyResponses",
+            "item/ResponseId": "@triggerBody()?['newId']",
+            "item/Event": "@coalesce(triggerBody()?['event'],'Demo event')",
+            "item/Rating": "@coalesce(triggerBody()?['rating'],'')",
+            "item/Feedback": "@coalesce(triggerBody()?['feedback'],'')"
+          },
+          "host": {
+            "apiId": "/providers/Microsoft.PowerApps/apis/shared_excelonlinebusiness",
+            "connectionName": "shared_excelonlinebusiness",
+            "operationId": "AddRowV2"
+          },
+          "authentication": {
+            "type": "Raw",
+            "value": "@json(decodeBase64(triggerOutputs().headers['X-MS-APIM-Tokens']))['$ConnectionKey']"
+          }
+        }
+      },
+      "Wait_for_Excel_visibility": {
+        "type": "Wait",
+        "inputs": {
+          "interval": {
+            "count": 30,
+            "unit": "Second"
+          }
+        },
+        "runAfter": {
+          "Append_intake": [
+            "Succeeded"
+          ]
+        }
+      }
+    },
+    "else": {
+      "actions": {}
+    },
+    "runAfter": {
+      "Input_id_matches": [
+        "Succeeded"
+      ]
+    }
+  },
+  "Read_responses": {
+    "type": "OpenApiConnection",
+    "runAfter": {
+      "Save_new_intake": [
+        "Succeeded"
+      ]
+    },
+    "inputs": {
+      "parameters": {
+        "source": "__EXCEL_SOURCE__",
+        "drive": "__EXCEL_DRIVE__",
+        "file": "surveys.xlsx",
+        "table": "SurveyResponses",
+        "dateTimeFormat": "ISO 8601"
+      },
+      "host": {
+        "apiId": "/providers/Microsoft.PowerApps/apis/shared_excelonlinebusiness",
+        "connectionName": "shared_excelonlinebusiness",
+        "operationId": "GetItems"
+      },
+      "authentication": {
+        "type": "Raw",
+        "value": "@json(decodeBase64(triggerOutputs().headers['X-MS-APIM-Tokens']))['$ConnectionKey']"
+      }
+    }
+  },
+  "For_each_response": {
+    "type": "Foreach",
+    "foreach": "@body('Read_responses')?['value']",
+    "actions": {
+      "Same_id": {
+        "type": "Query",
+        "inputs": {
+          "from": "@body('Read_responses')?['value']",
+          "where": "@equals(item()?['ResponseId'],items('For_each_response')?['ResponseId'])"
+        },
+        "runAfter": {}
+      },
+      "Route": {
+        "type": "Compose",
+        "inputs": "@if(not(equals(length(body('Same_id')),1)),'DuplicateNeedsReview',if(not(isInt(string(items('For_each_response')?['Rating']))),'InvalidRating',if(or(less(int(items('For_each_response')?['Rating']),1),greater(int(items('For_each_response')?['Rating']),5)),'InvalidRating',if(or(contains(toLower(coalesce(items('For_each_response')?['Feedback'],'')),'complaint'),contains(toLower(coalesce(items('For_each_response')?['Feedback'],'')),'unsafe'),contains(toLower(coalesce(items('For_each_response')?['Feedback'],'')),'harassment')),'CriticalFeedbackReview','Accepted'))))",
+        "runAfter": {
+          "Same_id": [
+            "Succeeded"
+          ]
+        }
+      },
+      "Result": {
+        "type": "Compose",
+        "inputs": {
+          "ResponseId": "@items('For_each_response')?['ResponseId']",
+          "Feedback": "@items('For_each_response')?['Feedback']",
+          "Rating": "@items('For_each_response')?['Rating']",
+          "Route": "@outputs('Route')",
+          "Mode": "PREVIEW_ONLY; no email sent",
+          "Rule": "Case-insensitive substring; human review required"
+        },
+        "runAfter": {
+          "Route": [
+            "Succeeded"
+          ]
+        }
+      },
+      "Write_receipt": {
+        "type": "OpenApiConnection",
+        "runAfter": {
+          "Result": [
+            "Succeeded"
+          ]
+        },
+        "inputs": {
+          "parameters": {
+            "dataset": "__SHAREPOINT_SITE_URL__",
+            "folderPath": "/Shared Documents",
+            "name": "@concat('demo-survey-',items('For_each_response')?['ResponseId'],'.json')",
+            "body": "@string(outputs('Result'))"
+          },
+          "host": {
+            "apiId": "/providers/Microsoft.PowerApps/apis/shared_sharepointonline",
+            "connectionName": "shared_sharepointonline",
+            "operationId": "CreateFile"
+          },
+          "authentication": {
+            "type": "Raw",
+            "value": "@json(decodeBase64(triggerOutputs().headers['X-MS-APIM-Tokens']))['$ConnectionKey']"
+          }
+        }
+      }
+    },
+    "runAfter": {
+      "Read_responses": [
+        "Succeeded"
+      ]
+    },
+    "runtimeConfiguration": {
+      "concurrency": {
+        "repetitions": 1
+      }
+    }
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "type": "object",
+  "required": [],
+  "properties": {
+    "newId": {
+      "type": "string",
+      "title": "New response ID (blank = process saved rows)",
+      "x-ms-content-hint": "TEXT",
+      "x-ms-dynamically-added": true
+    },
+    "event": {
+      "type": "string",
+      "title": "Synthetic event name",
+      "x-ms-content-hint": "TEXT",
+      "x-ms-dynamically-added": true
+    },
+    "rating": {
+      "type": "string",
+      "title": "Rating: integer 1 to 5",
+      "x-ms-content-hint": "TEXT",
+      "x-ms-dynamically-added": true
+    },
+    "feedback": {
+      "type": "string",
+      "title": "Feedback",
+      "x-ms-content-hint": "TEXT",
+      "x-ms-dynamically-added": true
+    }
+  }
+}
